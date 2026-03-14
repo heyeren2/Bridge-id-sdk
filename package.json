@@ -1,0 +1,49 @@
+{
+  "name": "bridge-id-sdk",
+  "version": "0.4.0",
+  "description": "Attribution and analytics SDK for Circle CCTP bridge integrators",
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "scripts"
+  ],
+  "bin": {
+    "bridgeidsdk": "scripts/generate-bridge-id.js"
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format cjs,esm --dts --clean",
+    "dev": "tsup src/index.ts --format cjs,esm --dts --watch",
+    "test": "vitest",
+    "lint": "tsc --noEmit",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "cctp",
+    "circle",
+    "usdc",
+    "bridge",
+    "analytics"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "viem": "^2.0.0"
+  },
+  "devDependencies": {
+    "tsup": "^8.0.0",
+    "typescript": "^5.0.0",
+    "vitest": "^1.0.0",
+    "@types/node": "^20.0.0"
+  },
+  "peerDependencies": {
+    "viem": "^2.0.0"
+  }
+}
