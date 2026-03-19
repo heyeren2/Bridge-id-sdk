@@ -1,6 +1,6 @@
 {
   "name": "bridge-id-sdk",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Attribution and analytics SDK for Circle CCTP bridge integrators",
   "main": "dist/index.js",
   "module": "dist/index.mjs",

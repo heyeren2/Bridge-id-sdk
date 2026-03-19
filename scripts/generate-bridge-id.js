@@ -2,8 +2,8 @@
 const { createHash } = require("crypto");
 const readline = require("readline");
 
-function generateBridgeId(projectName, routerAddress) {
-    const raw = `${projectName.toLowerCase()}_${routerAddress.toLowerCase()}`;
+function generateBridgeId(projectName, feeRecipient) {
+    const raw = `${projectName.toLowerCase()}_${feeRecipient.toLowerCase()}`;
     const hash = createHash("sha256").update(raw).digest("hex").slice(0, 6);
     const cleanName = projectName.toLowerCase().replace(/[^a-z0-9]/g, "");
     return `${cleanName}_${hash}`;
@@ -25,31 +25,31 @@ async function prompt(question) {
 async function main() {
     const args = process.argv.slice(2);
     let projectName = "";
-    let routerAddress = "";
+    let feeRecipient = "";
 
     for (let i = 0; i < args.length; i++) {
         if (args[i] === "--name") projectName = args[i + 1];
-        if (args[i] === "--address") routerAddress = args[i + 1];
+        if (args[i] === "--address") feeRecipient = args[i + 1];
     }
 
     if (!projectName) {
         projectName = await prompt("Enter your project name (e.g. MyBridge): ");
     }
 
-    if (!routerAddress) {
-        console.log("\n⚠️  Router not deployed yet? No problem, use a placeholder.\n");
-        routerAddress = await prompt("Enter router address (or press Enter to skip): ");
-        if (!routerAddress) {
-            routerAddress = "0x0000000000000000000000000000000000000000";
+    if (!feeRecipient) {
+        console.log("\n⚠️  No fee recipient address? Using a placeholder is not recommended for production.\n");
+        feeRecipient = await prompt("Enter fee recipient address (or press Enter to skip): ");
+        if (!feeRecipient) {
+            feeRecipient = "0x0000000000000000000000000000000000000000";
         }
     }
 
-    const bridgeId = generateBridgeId(projectName, routerAddress);
+    const bridgeId = generateBridgeId(projectName, feeRecipient);
 
     console.log("\n✅ Your Bridge ID:\n");
     console.log(`   ${bridgeId}\n`);
     console.log("Add this to your .env:\n");
-    console.log(`   NEXT_PUBLIC_BRIDGE_ID=${bridgeId}\n`);
+    console.log(`   VITE_BRIDGE_ID=${bridgeId}\n`);
     console.log("Use it in your frontend:\n");
     console.log(`   import { BridgeAnalytics } from "bridge-id-sdk"`);
     console.log(`\n   const sdk = new BridgeAnalytics({`);

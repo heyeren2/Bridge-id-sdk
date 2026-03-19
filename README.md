@@ -2,8 +2,15 @@
 
 Attribution and analytics SDK for Circle CCTP bridge integrators.
 
-Gives every bridge a unique ID, tracks the burn→mint lifecycle, and exposes
-transaction history and analytics — without wrapping or modifying CCTP contracts.
+Gives every bridge a unique ID, tracks the full burn→attestation→mint lifecycle, and exposes
+transaction history and analytics that works with any CCTP-compatible bridge.
+
+---
+
+## Source Code
+
+- **SDK Repository**: [github.com/heyeren2/bridge-id-sdk](https://github.com/heyeren2/bridge-id-sdk)
+- **Backend Template**: [github.com/heyeren2/bridge-id-backend-template](https://github.com/heyeren2/bridge-id-backend-template)
 
 ---
 
@@ -12,15 +19,17 @@ transaction history and analytics — without wrapping or modifying CCTP contrac
 ```
 Your Bridge Frontend
         │
-        ├─ calls sdk.bridge() — executes approve + BridgeRouter.bridge() on-chain
-        │     └─ Router emits BridgeInitiated(bridgeId, wallet, amount, nonce)
+        ├─ calls your bridge contract (e.g. Circle Wrapper)
         │
-        └─ SDK automatically calls trackBurn() after the tx confirms
-              └─ Sends burn metadata to your analytics backend
+        ├─ sdk.trackBurn() — after burn tx initiates
+        │
+        ├─ sdk.trackAttestation() — when Circle confirms burn
+        │
+        └─ sdk.trackMint() — when mint completes on destination
 ```
 
-Your analytics backend listens for mint events on the destination chain
-via Goldsky webhooks and automatically updates transaction status.
+Your analytics backend stores these steps, allowing you to show a clean **Activity** history with statuses across 
+multiple chains. A backup poller in the backend also checks the Iris API every 2 minutes for any missed updates.
 
 ---
 
@@ -34,11 +43,11 @@ npm install bridge-id-sdk
 
 ## Step 1: Generate Your Bridge ID
 
-Run this once when setting up. This gives you a unique ID that links
-all your bridge transactions together in the analytics backend.
+Run this once when setting up. This unique ID links all your bridge transactions in the analytics backend.
+Pass your **Fee Recipient** address to ensure your bridge's identity is unique.
 
 ```bash
-npx bridgeidsdk --name "MyBridge" --address "0xYOUR_ROUTER_ADDRESS"
+node scripts/generate-bridge-id.js --name "MyBridge" --address "0xYOUR_FEE_RECIPIENT_ADDRESS"
 ```
 
 Output:
@@ -49,11 +58,10 @@ Output:
 
 Add this to your .env:
 
-   NEXT_PUBLIC_BRIDGE_ID=mybridge_a3f9c2
+   VITE_BRIDGE_ID=mybridge_a3f9c2
 ```
 
-Store this in your `.env` file. Never change it, all your historical
-transactions are permanently linked to this ID.
+Store this in your `.env` file. Do not change it; all historical transactions are linked to this ID.
 
 ---
 
@@ -63,73 +71,55 @@ transactions are permanently linked to this ID.
 import { BridgeAnalytics } from "bridge-id-sdk"
 
 const sdk = new BridgeAnalytics({
-  bridgeId: process.env.NEXT_PUBLIC_BRIDGE_ID,
+  bridgeId: import.meta.env.VITE_BRIDGE_ID,
   apiUrl: "https://your-analytics-backend.xyz",
 
-  // Optional — pass your own RPC URLs for better reliability
-  // If not provided, the SDK falls back to free public RPCs
+  // Optional — pass your own RPC URLs for status checking
   rpcUrls: {
-    sepolia: process.env.NEXT_PUBLIC_SEPOLIA_RPC,
-    base:    process.env.NEXT_PUBLIC_BASE_RPC,
-    arc:     process.env.NEXT_PUBLIC_ARC_RPC,
+    sepolia: import.meta.env.VITE_SEPOLIA_RPC,
+    base:    import.meta.env.VITE_BASE_RPC,
+    arc:     import.meta.env.VITE_ARC_RPC,
   }
 })
 ```
 
 ---
 
-## Supported Routes
+## Step 3: Track Bridge Lifecycle
 
-The SDK only tracks transactions where **both** the source and destination
-chain have a BridgeRouter deployed. If either chain is not supported,
-call CCTP contracts directly in your frontend, and do not call `sdk.bridge()`.
+Call these as the bridge transaction progresses. In your frontend, use these inside your "status update" callbacks.
 
-| Route                  | Status   |
-|------------------------|----------|
-| Sepolia → Base         | ✓ Live   |
-| Sepolia → Arc          | ✓ Live   |
-| Base → Sepolia         | ✓ Live   |
-| Base → Arc             | ✓ Live   |
-| Arc → Sepolia          | ✓ Live   |
-| Arc → Base             | ✓ Live   |
-
-For unsupported routes (e.g. Optimism → Sei), call CCTP contracts
-directly in your frontend. The SDK will throw `CHAIN_NOT_FOUND` if you
-try to call `sdk.bridge()` with an unsupported chain — use that as your
-signal to fall back to direct CCTP.
+### Track the Burn
+Call this as soon as the source chain transaction is confirmed.
 
 ```typescript
-import { BridgeError } from "bridge-id-sdk"
-
-const ROUTER_CHAINS = ["sepolia", "base", "arc"]
-
-const bothSupported =
-  ROUTER_CHAINS.includes(sourceChain) &&
-  ROUTER_CHAINS.includes(destinationChain)
-
-if (bothSupported) {
-  // Use SDK — router + full tracking
-  await sdk.bridge({ amount, sourceChain, destinationChain, recipientAddress, walletClient })
-} else {
-  // Use CCTP directly — no tracking
-  await callCCTPDirectly({ ... })
-}
-```
-
----
-
-## Step 3: Execute a Bridge
-
-Call this to bridge USDC between two supported chains. The SDK handles
-the USDC approval, the router call, and tracking the burn automatically.
-
-```typescript
-const txHash = await sdk.bridge({
-  amount: "100.00",              // USDC amount as string
+await sdk.trackBurn({
+  burnTxHash: "0x...",
+  wallet: userAddress,
+  amount: "100.00",
   sourceChain: "sepolia",
   destinationChain: "base",
-  recipientAddress: "0x...",     // user's wallet on destination chain
-  walletClient,                  // from wagmi or viem
+})
+```
+
+### Track the Attestation
+Call this when the Circle attestation is fetched.
+
+```typescript
+await sdk.trackAttestation({
+  burnTxHash: "0x...",
+  success: true, // or false if it failed
+})
+```
+
+### Track the Mint
+Call this once the destination chain transaction is confirmed.
+
+```typescript
+await sdk.trackMint({
+  burnTxHash: "0x...",
+  mintTxHash: "0x...", // required if success is true
+  success: true,
 })
 ```
 
@@ -137,60 +127,43 @@ const txHash = await sdk.bridge({
 
 ## Step 4: Check Transaction Status
 
-Use this to show real-time bridge progress to your users.
+Use this to show real-time bridge progress to your users. The SDK checks both your backend and on-chain (as a fallback).
 
 ```typescript
 const status = await sdk.getStatus("0xBURN_TX_HASH")
 
 // status.status is one of:
-//   "burned"    — burn confirmed, waiting for Circle attestation (~2 min)
-//   "attested"  — Circle signed it, ready to mint on destination
-//   "minted"    — bridge complete
-//   "not_found" — tx not found or not tracked
+//   "burned"             — burn confirmed, waiting for attestation
+//   "attested"           — Circle signed it, ready to mint
+//   "attestation_failed" — Circle could not attest the burn
+//   "mint_failed"        — transaction failed on destination (manual mode)
+//   "completed"          — bridge cycle finished successfully
+//   "not_found"          — transaction not tracked or recognized
 
 if (status.status === "attested") {
-  // Attestation is ready — show Remint button in your frontend
-  // Pass status.messageBytes + status.attestation to CCTP receiveMessage()
-  console.log("Ready to mint:", status.attestation)
+  // Pass these to CCTP's receiveMessage() on the destination chain
+  console.log("Ready to mint:", status.messageBytes, status.attestation)
 }
 ```
 
-**Remint flow**: if status is `attested` and the mint hasn't executed,
-show a Remint button in your frontend. Your frontend calls
-`receiveMessage(messageBytes, attestation)` on the destination chain's
-MessageTransmitter directly. The SDK provides `messageBytes` and
-`attestation` in the status result.
-
 ---
 
-## Step 5: Fetch User Activity
+## Step 5: Fetch Analytics & History
 
-Use this to populate your activity tab.
+### User Activity
+A flattened list of transactions for a specific user, perfect for an "Activity" tab.
 
 ```typescript
 const activity = await sdk.getUserActivity(walletAddress)
-
-// activity.transactions[n]:
-// {
-//   burnTxHash:       "0x...",
-//   mintTxHash:       "0x..." | null,
-//   amount:           "100.00",
-//   sourceChain:      "sepolia",
-//   destinationChain: "base",
-//   status:           "burned" | "attested" | "minted" | "failed",
-//   timestamp:        1234567890
-// }
 ```
 
----
-
-## Step 6: Fetch Transaction List
+### Transaction Search
+Filter/search specifically for your bridge transactions.
 
 ```typescript
 const txs = await sdk.getTransactions({
-  wallet: userAddress,
+  wallet: userAddress, // or "all"
   limit: 20,
-  offset: 0,
 })
 ```
 
@@ -198,126 +171,58 @@ const txs = await sdk.getTransactions({
 
 ## Error Handling
 
-All SDK methods throw a `BridgeError` on failure. Catch it to show
-the right message to your users.
+All SDK methods throw a `BridgeError` on failure.
 
 ```typescript
 import { BridgeError } from "bridge-id-sdk"
 
 try {
-  await sdk.bridge({ ... })
+  await sdk.trackBurn({ ... })
 } catch (err) {
   if (err instanceof BridgeError) {
-    switch (err.code) {
-      case "INVALID_INPUT":
-        // Bad address, amount, or missing field
-        showToast(err.message)
-        break
-      case "CHAIN_NOT_FOUND":
-        // Chain not supported — fall back to CCTP direct
-        await callCCTPDirectly({ ... })
-        break
-      case "NETWORK_ERROR":
-        // RPC or backend unreachable — show retry
-        showToast("Connection failed. Please try again.")
-        break
-      case "NOT_FOUND":
-        // Transaction not found
-        showToast("Transaction not found.")
-        break
-      case "CONFIG_ERROR":
-        // Missing bridgeId or apiUrl on init
-        console.error("SDK misconfigured:", err.message)
-        break
-    }
+    console.error(`Error Code: ${err.code}`, err.message)
   }
 }
 ```
-
-### Error codes
 
 | Code            | When it happens                                      |
 |-----------------|------------------------------------------------------|
 | `INVALID_INPUT` | Bad tx hash, wallet address, amount, or missing field |
-| `CHAIN_NOT_FOUND` | Chain not in supported routes                      |
 | `NETWORK_ERROR` | RPC call or backend request failed                   |
-| `NOT_FOUND`     | Transaction not found in backend                     |
+| `NOT_FOUND`     | Transaction not found in backend or on-chain         |
 | `CONFIG_ERROR`  | Missing `bridgeId` or `apiUrl` on SDK init           |
-
----
-
-## Full Integration Example
-
-```typescript
-import { BridgeAnalytics, BridgeError } from "bridge-id-sdk"
-
-const sdk = new BridgeAnalytics({
-  bridgeId: process.env.NEXT_PUBLIC_BRIDGE_ID,
-  apiUrl:   process.env.NEXT_PUBLIC_ANALYTICS_URL,
-  rpcUrls: {
-    sepolia: process.env.NEXT_PUBLIC_SEPOLIA_RPC,
-    base:    process.env.NEXT_PUBLIC_BASE_RPC,
-    arc:     process.env.NEXT_PUBLIC_ARC_RPC,
-  }
-})
-
-const ROUTER_CHAINS = ["sepolia", "base", "arc"]
-
-async function handleBridge({ amount, sourceChain, destinationChain, recipient, walletClient }) {
-  const bothSupported =
-    ROUTER_CHAINS.includes(sourceChain) &&
-    ROUTER_CHAINS.includes(destinationChain)
-
-  if (bothSupported) {
-    try {
-      const txHash = await sdk.bridge({
-        amount,
-        sourceChain,
-        destinationChain,
-        recipientAddress: recipient,
-        walletClient,
-      })
-      console.log("Bridge tx:", txHash)
-    } catch (err) {
-      if (err instanceof BridgeError) {
-        console.error(err.code, err.message, err.details)
-      }
-    }
-  } else {
-    // Call CCTP contracts directly for unsupported routes
-    await callCCTPDirectly({ amount, sourceChain, destinationChain, recipient, walletClient })
-  }
-}
-
-// Render activity tab
-const activity = await sdk.getUserActivity(userAddress)
-
-// Poll status every 30 seconds until minted
-const status = await sdk.getStatus(burnTxHash)
-```
-
----
-
-## What the SDK Does NOT Do
-
-- Does not execute transactions for unsupported chains
-- Does not touch or custody user funds
-- Does not handle the remint flow (your frontend does this)
-- Does not wrap or modify CCTP contracts
-- Does not store or expose RPC API keys
-
-The SDK is a routing, recording, and querying layer.
 
 ---
 
 ## Backend
 
-This SDK requires a running analytics backend to function.
-The backend handles burn tracking, Goldsky webhook ingestion,
-mint confirmation, and analytics aggregation.
+This SDK requires a running analytics backend to store and serve transaction data.
+We provide a ready-to-deploy template with Express, Drizzle ORM, and Neon (PostgreSQL).
 
-Backend setup guide and source code:
-👉 https://github.com/heyeren2/bridge-id-backend-template
+**Quick start:**
+```bash
+git clone https://github.com/heyeren2/bridge-id-backend-template.git
+cd bridge-id-backend-template
+npm install
+```
+
+The backend handles:
+- **Burn verification** — confirms transactions on-chain before storing
+- **Lifecycle tracking** — stores burn, attestation, and mint status updates
+- **Analytics** — volume, transaction count, and user stats per bridge ID
+- **Activity feed** — paginated transaction history per wallet
+
+Full setup guide (Neon, Render, environment variables):
+👉 [Backend README](https://github.com/heyeren2/bridge-id-backend-template#readme)
+
+---
+
+## What the SDK Does NOT Do
+
+- Does **not** execute any bridge transactions on-chain.
+- Does **not** custody funds or wrap CCTP.
+- Does **not** handle the "Remint" UI logic (your frontend provides the button).
+- Does **not** store sensitive private keys.
 
 ---
 

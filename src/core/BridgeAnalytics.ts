@@ -1,21 +1,21 @@
 import { trackBurn, TrackBurnParams } from "../tracking/trackBurn";
+import { trackAttestation, TrackAttestationParams } from "../tracking/trackAttestation";
+import { trackMint, TrackMintParams } from "../tracking/trackMint";
 import { getTransactions, GetTransactionsParams } from "../analytics/getTransactions";
 import { getUserActivity } from "../analytics/getUserActivity";
 import { generateBridgeId } from "../utils/generateBridgeId";
-import { getChain, ROUTER_ABI, USDC_ABI, MESSAGE_TRANSMITTER_ABI } from "../chains/config";
+import { getChain, MESSAGE_TRANSMITTER_ABI } from "../chains/config";
 import { BridgeError } from "../errors/BridgeError";
 import {
   createPublicClient,
   http,
-  parseUnits,
-  pad,
   keccak256,
   decodeEventLog,
 } from "viem";
 
 // Types
 
-export type BridgeStatus = "burned" | "attested" | "minted" | "not_found";
+export type BridgeStatus = "burned" | "attested" | "attestation_failed" | "mint_failed" | "completed" | "not_found";
 
 export interface StatusResult {
   status: BridgeStatus;
@@ -32,14 +32,6 @@ export interface BridgeAnalyticsConfig {
   bridgeId: string;
   apiUrl: string;
   rpcUrls?: Partial<Record<string, string>>;
-}
-
-export interface BridgeParams {
-  amount: string;
-  sourceChain: string;
-  destinationChain: string;
-  recipientAddress: string;
-  walletClient: any;
 }
 
 // Class
@@ -64,87 +56,25 @@ export class BridgeAnalytics {
     return getChain(chainName).rpcUrl;
   }
 
-  // bridge
+  // Track Burn
 
-  async bridge(params: BridgeParams): Promise<string> {
-    const { amount, sourceChain, destinationChain, recipientAddress, walletClient } = params;
-
-    if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) {
-      throw new BridgeError("INVALID_INPUT", "Invalid amount — must be a positive number");
-    }
-    if (!recipientAddress || !recipientAddress.startsWith("0x")) {
-      throw new BridgeError("INVALID_INPUT", "Invalid recipientAddress — must be a 0x hex string");
-    }
-    if (!sourceChain) {
-      throw new BridgeError("INVALID_INPUT", "sourceChain is required");
-    }
-    if (!destinationChain) {
-      throw new BridgeError("INVALID_INPUT", "destinationChain is required");
-    }
-
-    let sourceConfig: ReturnType<typeof getChain>;
-    let destConfig: ReturnType<typeof getChain>;
-
-    try {
-      sourceConfig = getChain(sourceChain);
-    } catch {
-      throw new BridgeError("CHAIN_NOT_FOUND", `Unsupported source chain: ${sourceChain}`);
-    }
-
-    try {
-      destConfig = getChain(destinationChain);
-    } catch {
-      throw new BridgeError("CHAIN_NOT_FOUND", `Unsupported destination chain: ${destinationChain}`);
-    }
-
-    const amountRaw = parseUnits(amount, 6);
-    const recipientBytes32 = pad(recipientAddress as `0x${string}`, { size: 32 });
-    const userAddress = walletClient.account.address;
-
-    const publicClient = createPublicClient({
-      transport: http(this.getRpcUrl(sourceChain)),
-    });
-
-    try {
-      const approveTx = await walletClient.writeContract({
-        address: sourceConfig.usdcAddress as `0x${string}`,
-        abi: USDC_ABI,
-        functionName: "approve",
-        args: [sourceConfig.routerAddress as `0x${string}`, amountRaw],
-      });
-      await publicClient.waitForTransactionReceipt({ hash: approveTx });
-    } catch (err: any) {
-      throw new BridgeError("NETWORK_ERROR", "USDC approval failed", err.message);
-    }
-
-    let receipt: any;
-
-    try {
-      const bridgeTx = await walletClient.writeContract({
-        address: sourceConfig.routerAddress as `0x${string}`,
-        abi: ROUTER_ABI,
-        functionName: "bridge",
-        args: [amountRaw, destConfig.cctpDomain, recipientBytes32, this.bridgeId],
-      });
-      receipt = await publicClient.waitForTransactionReceipt({ hash: bridgeTx });
-    } catch (err: any) {
-      throw new BridgeError("NETWORK_ERROR", "Bridge transaction failed", err.message);
-    }
-
-    await trackBurn({
-      burnTxHash: receipt.transactionHash,
-      wallet: userAddress,
-      amount,
-      sourceChain,
-      destinationChain,
-      bridgeId: this.bridgeId,
-      apiUrl: this.apiUrl,
-    });
-
-    return receipt.transactionHash;
+  async trackBurn(params: Omit<TrackBurnParams, "bridgeId" | "apiUrl">): Promise<void> {
+    await trackBurn({ ...params, bridgeId: this.bridgeId, apiUrl: this.apiUrl });
   }
 
-  // getStatus
+  // Track Attestation
+
+  async trackAttestation(params: Omit<TrackAttestationParams, "bridgeId" | "apiUrl">): Promise<void> {
+    await trackAttestation({ ...params, bridgeId: this.bridgeId, apiUrl: this.apiUrl });
+  }
+
+  // Track Mint
+
+  async trackMint(params: Omit<TrackMintParams, "bridgeId" | "apiUrl">): Promise<void> {
+    await trackMint({ ...params, bridgeId: this.bridgeId, apiUrl: this.apiUrl });
+  }
+
+  // Get Status
 
   async getStatus(burnTxHash: string): Promise<StatusResult> {
     if (!burnTxHash || !burnTxHash.startsWith("0x")) {
@@ -162,12 +92,23 @@ export class BridgeAnalytics {
         return { status: "not_found", burnTxHash, sourceChain: "unknown" };
       }
 
-      const { sourceChain, destinationChain, mintTxHash } = tx;
+      const { sourceChain, destinationChain, mintTxHash, status } = tx;
 
-      if (tx.status === "minted" && mintTxHash) {
-        return { status: "minted", burnTxHash, sourceChain, destinationChain, mintTxHash };
+      // If backend already knows the final status, return it
+      if (status === "completed" && mintTxHash) {
+        return { status: "completed", burnTxHash, sourceChain, destinationChain, mintTxHash };
+      }
+      if (status === "mint_failed") {
+        return { status: "mint_failed", burnTxHash, sourceChain, destinationChain };
+      }
+      if (status === "attestation_failed") {
+        return { status: "attestation_failed", burnTxHash, sourceChain, destinationChain };
+      }
+      if (status === "attested") {
+        return { status: "attested", burnTxHash, sourceChain, destinationChain };
       }
 
+      // Status is "burned" — check on-chain for attestation
       const sourceClient = createPublicClient({
         transport: http(this.getRpcUrl(sourceChain)),
       });
@@ -219,18 +160,6 @@ export class BridgeAnalytics {
         return { status: "burned", burnTxHash, sourceChain, destinationChain };
       }
 
-      if (mintTxHash) {
-        return {
-          status: "minted",
-          burnTxHash,
-          sourceChain,
-          destinationChain,
-          mintTxHash,
-          attestation: attestationData.attestation,
-          messageBytes,
-        };
-      }
-
       return {
         status: "attested",
         burnTxHash,
@@ -249,12 +178,6 @@ export class BridgeAnalytics {
         error: err.message,
       };
     }
-  }
-
-  // trackBurn
-
-  async trackBurn(params: TrackBurnParams): Promise<void> {
-    await trackBurn({ ...params, bridgeId: this.bridgeId, apiUrl: this.apiUrl });
   }
 
   // Analytics
