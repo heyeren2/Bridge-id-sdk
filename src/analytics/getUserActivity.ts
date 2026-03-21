@@ -1,6 +1,7 @@
 import { BridgeError } from "../errors/BridgeError";
 
 export interface ActivityTransaction {
+  wallet: string; // Added wallet field
   burnTxHash: string;
   mintTxHash: string | null;
   amount: string;
