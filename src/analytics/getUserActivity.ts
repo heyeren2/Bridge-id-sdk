@@ -5,6 +5,7 @@ export interface ActivityTransaction {
   burnTxHash: string;
   mintTxHash: string | null;
   amount: string;
+  amountReceived: string | null;
   sourceChain: string;
   destinationChain: string;
   status: "burned" | "attested" | "minted" | "failed";
