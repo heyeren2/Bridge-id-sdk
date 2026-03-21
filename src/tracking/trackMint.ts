@@ -3,13 +3,14 @@ import { BridgeError } from "../errors/BridgeError";
 export interface TrackMintParams {
     burnTxHash: string;
     mintTxHash?: string;
+    amountReceived?: string;
     success: boolean;
     bridgeId?: string;
     apiUrl?: string;
 }
 
 export async function trackMint(params: TrackMintParams): Promise<void> {
-    const { burnTxHash, mintTxHash, success, bridgeId, apiUrl } = params;
+    const { burnTxHash, mintTxHash, amountReceived, success, bridgeId, apiUrl } = params;
 
     if (!burnTxHash || !burnTxHash.startsWith("0x")) {
         throw new BridgeError("INVALID_INPUT", "Invalid burnTxHash — must be a 0x hex string");
@@ -28,6 +29,7 @@ export async function trackMint(params: TrackMintParams): Promise<void> {
             body: JSON.stringify({
                 burnTxHash,
                 mintTxHash: mintTxHash || null,
+                amountReceived: amountReceived || null,
                 bridgeId,
                 success,
                 timestamp: Date.now(),
