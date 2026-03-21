@@ -43,11 +43,12 @@ npm install bridge-id-sdk
 
 ## Step 1: Generate Your Bridge ID
 
-Run this once when setting up. This unique ID links all your bridge transactions in the analytics backend.
-Pass your **Fee Recipient** address to ensure your bridge's identity is unique.
+Run this **once** when setting up. This unique ID links all your bridge transactions to your analytics backend.
+Pass your **Project Name** and **Fee Recipient** address to generate a unique, deterministic ID.
 
+**From your project folder** (where `bridge-id-sdk` is installed):
 ```bash
-node scripts/generate-bridge-id.js --name "MyBridge" --address "0xYOUR_FEE_RECIPIENT_ADDRESS"
+npx bridgeidsdk --name "MyBridge" --address "0xYOUR_FEE_RECIPIENT_ADDRESS"
 ```
 
 Output:
@@ -61,7 +62,7 @@ Add this to your .env:
    VITE_BRIDGE_ID=mybridge_a3f9c2
 ```
 
-Store this in your `.env` file. Do not change it; all historical transactions are linked to this ID.
+> ⚠️ **Never change this ID.** All historical transactions are permanently linked to it.
 
 ---
 
