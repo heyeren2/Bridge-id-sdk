@@ -1,4 +1,8 @@
-# bridge-id-sdk
+# 🌉 bridge-id-sdk
+
+[![NPM Version](https://img.shields.io/npm/v/bridge-id-sdk?color=blue&style=flat-square)](https://www.npmjs.com/package/bridge-id-sdk)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](https://opensource.org/licenses/MIT)
+[![CCTP Compatible](https://img.shields.io/badge/Circle-CCTP-green?style=flat-square)](https://developers.circle.com/stablecoins/cctp-getting-started)
 
 Attribution and analytics SDK for Circle CCTP bridge integrators.
 
@@ -16,16 +20,26 @@ transaction history and analytics that works with any CCTP-compatible bridge.
 
 ## How It Works
 
-```
-Your Bridge Frontend
-        │
-        ├─ calls your bridge contract (e.g. Circle Wrapper)
-        │
-        ├─ sdk.trackBurn() — after burn tx initiates
-        │
-        ├─ sdk.trackAttestation() — when Circle confirms burn
-        │
-        └─ sdk.trackMint() — when mint completes on destination
+```mermaid
+sequenceDiagram
+    participant F as Bridge Frontend
+    participant S as SDK
+    participant B as Backend
+    participant C as Circle CCTP
+    
+    F->>C: Burn USDC
+    F->>S: sdk.trackBurn()
+    S->>B: Store Burn (Status: burned)
+    
+    C-->>F: Attestation Ready
+    F->>S: sdk.trackAttestation()
+    S->>B: Update (Status: attested)
+    
+    F->>C: Mint on Destination
+    F->>S: sdk.trackMint()
+    S->>B: Update (Status: completed)
+    
+    B-->>B: (Backup) Iris Poller checks status
 ```
 
 Your analytics backend stores these steps, allowing you to show a clean **Activity** history with statuses across 
@@ -128,7 +142,7 @@ await sdk.trackMint({
 
 ## Step 4: Check Transaction Status
 
-Use this to show real-time bridge progress to your users. The SDK checks both your backend and on-chain (as a fallback).
+Use this to show real-time bridge progress to your users. The SDK checks both your backend and on-chain for accuracy.
 
 ```typescript
 const status = await sdk.getStatus("0xBURN_TX_HASH")
@@ -208,10 +222,10 @@ npm install
 ```
 
 The backend handles:
-- **Burn verification** — confirms transactions on-chain before storing
-- **Lifecycle tracking** — stores burn, attestation, and mint status updates
-- **Analytics** — volume, transaction count, and user stats per bridge ID
-- **Activity feed** — paginated transaction history per wallet
+- **Burn verification** → confirms transactions on-chain before storing
+- **Lifecycle tracking** → stores burn, attestation, and mint status updates
+- **Analytics** → volume, transaction count, and user stats per bridge ID
+- **Activity feed** → paginated transaction history per wallet
 
 Full setup guide (Neon, Render, environment variables):
 👉 [Backend README](https://github.com/heyeren2/bridge-id-backend-template#readme)
@@ -224,6 +238,19 @@ Full setup guide (Neon, Render, environment variables):
 - Does **not** custody funds or wrap CCTP.
 - Does **not** handle the "Remint" UI logic (your frontend provides the button).
 - Does **not** store sensitive private keys.
+
+---
+
+---
+
+## SDK USECASE?
+
+The SDK helps you track and show bridge transactions using Circle CCTP. By adding it to your bridge, you get:
+
+1.  **Uniform Attribution**: Identify which bridges and partners are driving the most volume.
+2.  **User Experience**: Provide users with a reliable "Activity" history that persists across sessions and devices.
+3.  **Reliability**: The built-in Iris API poller ensures that even if a user closes their tab mid-bridge, the transaction is eventually tracked as "Completed".
+4.  **Simplified Development**: Expose transaction history and analytics that work out-of-the-box with any CCTP-compatible bridge.
 
 ---
 
