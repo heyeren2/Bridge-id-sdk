@@ -20,6 +20,11 @@ transaction history and analytics that works with any CCTP-compatible bridge.
 
 ## How It Works
 
+![Bridge Lifecycle](https://mermaid.ink/img/pako:eNqFkt9r2zAQx_-V454ScEK8OEuqh0LtEBijUOb1ZfhFta6JiC15-gHrQv73ne1uLWlgfhA-3ee-X0l3J6ytIhTo6WckU9NWy72TbWWAv066oGvdSRNgB9JD7rTaE-ycNYGM-kiVPVVuv37M5EO9rI9X64o-W2hXNwRF8f1hJMZ1N7u9LQTk0Rl4LLfF224pwKvjPDiW7dOT6ZgrOZcLKIN1NNZNyiBD9AKeOCI1fa9fzBjfCbgLgTxj2hr4RlK9XDd6h134PXZKBnrzkgN54fZ6m3vNt2ajLRPaDGrX7XrwPz61bbuGLo3y2UhP-keP3RS-OO3hwTYNOagPVB89-EEBE9xzY1EEFynBllwr-xBPvVKF4UAtVSj4V9GzjE2osDJnLuPe_bC2_VvpbNwfUDzLxnMUh2O-DtQ_hNtPrrDRBBRZOkigOOEvFJ8Wy3m2zG7SLF2kabZINwm-MLSer1Y3vLv-vFln6fKc4O_BczHfrFcJktLc5_txjIdpPv8BwmPhew?type=png)
+
+<details>
+<summary>View Mermaid Source</summary>
+
 ```mermaid
 sequenceDiagram
     participant F as Bridge Frontend
@@ -41,6 +46,7 @@ sequenceDiagram
     
     B-->>B: (Backup) Iris Poller checks status
 ```
+</details>
 
 Your analytics backend stores these steps, allowing you to show a clean **Activity** history with statuses across 
 multiple chains. A backup poller in the backend also checks the Iris API every 2 minutes for any missed updates.
