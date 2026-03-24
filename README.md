@@ -20,7 +20,7 @@ transaction history and analytics that works with any CCTP-compatible bridge.
 
 ## How It Works
 
-![How bridge-id-sdk tracks your transactions](assets/diagram.png)
+![How bridge-id-sdk tracks your transactions](https://raw.githubusercontent.com/heyeren2/bridge-id-sdk/main/assets/diagram.png)
 
 Your analytics backend stores these steps, allowing you to show a clean **Activity** history with statuses across 
 multiple chains. A backup poller in the backend also checks the Iris API every 2 minutes for any missed updates.
